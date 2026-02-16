@@ -2,144 +2,154 @@
 from fpdf import FPDF
 from typing import Dict
 from datetime import datetime
+import traceback
+from loguru import logger
 
 class PDFGenerator:
     @staticmethod
     def generate_summary_pdf(config: Dict, tree: Dict, requirements: str) -> bytes:
         def _ascii(s) -> str:
+            if s is None:
+                return ''
             try:
                 return str(s).encode('latin-1', 'replace').decode('latin-1')
             except Exception:
                 return str(s)
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=15)
-        pdf.add_page()
+        
+        try:
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=15)
+            pdf.add_page()
 
-        # Header banner (Material Blue) — full width, fixed height
-        pdf.set_fill_color(33, 150, 243)
-        pdf.rect(0, 0, pdf.w, 20, 'F')
-        pdf.set_xy(10, 5)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_font("Arial", 'B', 14)
-        pdf.cell(0, 10, _ascii("ProjectMaker Report"), ln=True)
-
-        # Reset for body
-        pdf.set_text_color(0, 0, 0)
-        pdf.ln(10)
-
-        pdf.set_font("Arial", size=12)
-        pdf.cell(0, 8, txt=_ascii(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"), ln=True)
-        pdf.ln(4)
-
-        # Sections helper: colored header + divider
-        def section_header(title: str):
-            pdf.set_draw_color(200, 200, 200)
-            pdf.line(10, pdf.get_y(), pdf.w - 10, pdf.get_y())
-            pdf.ln(4)
-            pdf.set_text_color(0, 102, 204)
+            # Header banner (Material Blue) — full width, fixed height
+            pdf.set_fill_color(33, 150, 243)
+            pdf.rect(0, 0, pdf.w, 20, 'F')
+            pdf.set_xy(10, 5)
+            pdf.set_text_color(255, 255, 255)
             pdf.set_font("Arial", 'B', 14)
-            pdf.set_fill_color(245, 245, 245)
-            pdf.cell(0, 8, txt=_ascii(title), ln=True, fill=True)
+            pdf.cell(0, 10, _ascii("ProjectMaker Report"), ln=True)
+
+            # Reset for body
             pdf.set_text_color(0, 0, 0)
+            pdf.ln(10)
+
+            pdf.set_font("Arial", size=12)
+            pdf.cell(0, 8, txt=_ascii(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"), ln=True)
+            pdf.ln(4)
+
+            # Sections helper: colored header + divider
+            def section_header(title: str):
+                pdf.set_draw_color(200, 200, 200)
+                pdf.line(10, pdf.get_y(), pdf.w - 10, pdf.get_y())
+                pdf.ln(4)
+                pdf.set_text_color(0, 102, 204)
+                pdf.set_font("Arial", 'B', 14)
+                pdf.set_fill_color(245, 245, 245)
+                pdf.cell(0, 8, txt=_ascii(title), ln=True, fill=True)
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(2)
+
+            # Config section
+            section_header("Configuration")
+            pdf.set_font("Arial", size=11)
+            for key, value in config.items():
+                # Skip the plain description here; it is rendered in a dedicated section at the end
+                if str(key).lower() == 'description':
+                    continue
+                pdf.multi_cell(0, 6, txt=_ascii(f"- {key}: {value}"))
             pdf.ln(2)
 
-        # Config section
-        section_header("Configuration")
-        pdf.set_font("Arial", size=11)
-        for key, value in config.items():
-            # Skip the plain description here; it is rendered in a dedicated section at the end
-            if str(key).lower() == 'description':
-                continue
-            pdf.multi_cell(0, 6, txt=_ascii(f"- {key}: {value}"))
-        pdf.ln(2)
-
-        # Tree section
-        section_header("Project Structure")
-        pdf.set_font("Arial", size=11)
-        for line in PDFGenerator._format_tree_lines(tree):
-            pdf.cell(0, 6, txt=_ascii(line), ln=True)
-        pdf.ln(2)
-
-        # Database section
-        db_info = PDFGenerator._extract_database_info(config)
-        if db_info:
-            section_header("Database Configuration")
+            # Tree section
+            section_header("Project Structure")
             pdf.set_font("Arial", size=11)
-            for line in db_info:
+            for line in PDFGenerator._format_tree_lines(tree):
                 pdf.cell(0, 6, txt=_ascii(line), ln=True)
             pdf.ln(2)
 
-        # Requirements
-        if requirements:
-            section_header("Dependencies")
-            pdf.set_font("Arial", size=11)
-            for line in requirements.split('\n'):
-                if line.strip():
-                    pdf.cell(0, 6, txt=_ascii(f"- {line}"), ln=True)
-            pdf.ln(2)
-
-        # Ports & Scripts table
-        table = PDFGenerator._ports_scripts(config)
-        if table:
-            try:
-                section_header("Ports & Scripts")
-                pdf.set_font("Arial", 'B', 11)
-                pdf.set_fill_color(240,240,240)
-                pdf.cell(60, 8, _ascii("Component"), 1, 0, 'L', True)
-                pdf.cell(80, 8, _ascii("Dev Command"), 1, 0, 'L', True)
-                pdf.cell(40, 8, _ascii("Port"), 1, 1, 'L', True)
-                pdf.set_font("Courier", size=10)
-                for row in table:
-                    comp, cmd, port = row
-                    pdf.cell(60, 7, _ascii(comp), 1)
-                    pdf.cell(80, 7, _ascii(cmd), 1)
-                    pdf.cell(40, 7, _ascii(port), 1, 1)
+            # Database section
+            db_info = PDFGenerator._extract_database_info(config)
+            if db_info:
+                section_header("Database Configuration")
+                pdf.set_font("Arial", size=11)
+                for line in db_info:
+                    pdf.cell(0, 6, txt=_ascii(line), ln=True)
                 pdf.ln(2)
-            except Exception:
-                # Gracefully skip table rendering if any issue arises
-                pass
 
-        # Next Steps
-        steps = PDFGenerator._next_steps(config)
-        if steps:
-            section_header("Next Steps")
-            for line in steps:
-                # Use Courier for command-like lines
-                stripped = line.strip().lower()
-                if stripped.startswith(("cd ", "npm ", "bun ", "uvicorn ", "python ", "./gradlew", "java -jar", "git ")):
-                    pdf.set_font("Courier", size=11)
-                elif stripped.startswith("(optional) initialize git"):
+            # Requirements
+            if requirements:
+                section_header("Dependencies")
+                pdf.set_font("Arial", size=11)
+                for line in requirements.split('\n'):
+                    if line.strip():
+                        pdf.cell(0, 6, txt=_ascii(f"- {line}"), ln=True)
+                pdf.ln(2)
+
+            # Ports & Scripts table
+            table = PDFGenerator._ports_scripts(config)
+            if table:
+                try:
+                    section_header("Ports & Scripts")
                     pdf.set_font("Arial", 'B', 11)
-                elif stripped.startswith("your project is ready"):
-                    pdf.set_font("Arial", 'I', 11)
-                else:
-                    pdf.set_font("Arial", size=11)
-                pdf.multi_cell(0, 6, txt=_ascii(line))
-            pdf.ln(2)
+                    pdf.set_fill_color(240,240,240)
+                    pdf.cell(60, 8, _ascii("Component"), 1, 0, 'L', True)
+                    pdf.cell(80, 8, _ascii("Dev Command"), 1, 0, 'L', True)
+                    pdf.cell(40, 8, _ascii("Port"), 1, 1, 'L', True)
+                    pdf.set_font("Courier", size=10)
+                    for row in table:
+                        comp, cmd, port = row
+                        pdf.cell(60, 7, _ascii(comp), 1)
+                        pdf.cell(80, 7, _ascii(cmd), 1)
+                        pdf.cell(40, 7, _ascii(port), 1, 1)
+                    pdf.ln(2)
+                except Exception:
+                    # Gracefully skip table rendering if any issue arises
+                    pass
 
-        # ---------------------------------------------------------------------
-        # Feature: Append the user's Project Description at the very end
-        # Beautiful header + long, wrapped body text
-        # ---------------------------------------------------------------------
-        desc = (config or {}).get('description')
-        if desc:
-            section_header("Project Description")
-            # Use a more elegant font for the description body
-            pdf.set_font("Times", 'I', 12)
-            pdf.set_text_color(60, 60, 60)
-            pdf.multi_cell(0, 6, txt=_ascii(str(desc)))
+            # Next Steps
+            steps = PDFGenerator._next_steps(config)
+            if steps:
+                section_header("Next Steps")
+                for line in steps:
+                    # Use Courier for command-like lines
+                    stripped = line.strip().lower()
+                    if stripped.startswith(("cd ", "npm ", "bun ", "uvicorn ", "python ", "./gradlew", "java -jar", "git ")):
+                        pdf.set_font("Courier", size=11)
+                    elif stripped.startswith("(optional) initialize git"):
+                        pdf.set_font("Arial", 'B', 11)
+                    elif stripped.startswith("your project is ready"):
+                        pdf.set_font("Arial", 'I', 11)
+                    else:
+                        pdf.set_font("Arial", size=11)
+                    pdf.multi_cell(0, 6, txt=_ascii(line))
+                pdf.ln(2)
+
+            # ---------------------------------------------------------------------
+            # Feature: Append the user's Project Description at the very end
+            # Beautiful header + long, wrapped body text
+            # ---------------------------------------------------------------------
+            desc = (config or {}).get('description')
+            if desc:
+                section_header("Project Description")
+                # Use a more elegant font for the description body
+                pdf.set_font("Times", 'I', 12)
+                pdf.set_text_color(60, 60, 60)
+                pdf.multi_cell(0, 6, txt=_ascii(str(desc)))
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(2)
+
+            # Branding footer (centered, subtle)
+            pdf.set_y(-25)
+            pdf.set_font("Arial", 'I', 9)
+            pdf.set_text_color(120, 120, 120)
+            pdf.cell(0, 8, _ascii("Generated by ProjectMaker  |  (c) 2025 SwagCode4U"), 0, 0, 'C')
             pdf.set_text_color(0, 0, 0)
-            pdf.ln(2)
 
-        # Branding footer (centered, subtle)
-        pdf.set_y(-25)
-        pdf.set_font("Arial", 'I', 9)
-        pdf.set_text_color(120, 120, 120)
-        pdf.cell(0, 8, _ascii("Generated by ProjectMaker  |  (c) 2025 SwagCode4U"), 0, 0, 'C')
-        pdf.set_text_color(0, 0, 0)
-
-        # Output as bytes
-        return pdf.output(dest='S').encode('latin-1', 'replace')
+            # Output as bytes
+            return pdf.output(dest='S').encode('latin-1', 'replace')
+        except Exception as e:
+            logger.error(f"PDF generation error: {str(e)}")
+            logger.error(traceback.format_exc())
+            raise Exception(f"PDF generation failed: {str(e)}")
 
     @staticmethod
     def _format_tree_lines(node: Dict) -> list[str]:
@@ -147,23 +157,34 @@ class PDFGenerator:
         Uses only ASCII so it renders with built-in FPDF fonts.
         """
         lines: list[str] = []
+        
+        if not node:
+            return lines
 
         def format_name(n: Dict) -> str:
-            name = str(n.get('name', ''))
-            ntype = str(n.get('type', ''))
+            if not n:
+                return ''
+            name = str(n.get('name', '') or '')
+            ntype = str(n.get('type', '') or '')
             # Add trailing slash for directories
             return name + ('/' if ntype == 'directory' else '')
 
         def walk_children(children: list, prefix: str = '') -> None:
-            for idx, child in enumerate(children or []):
+            if not children:
+                return
+            for idx, child in enumerate(children):
+                if not child:
+                    continue
                 last = idx == len(children) - 1
                 connector = '`-- ' if last else '|-- '
                 lines.append(f"{prefix}{connector}{format_name(child)}")
-                walk_children(child.get('children', []), prefix + ('    ' if last else '|   '))
+                walk_children(child.get('children') or [], prefix + ('    ' if last else '|   '))
 
         # Start with root line, then recurse into its children
-        lines.append(format_name(node))
-        walk_children(list(node.get('children', []) or []), '')
+        root_name = format_name(node)
+        if root_name:
+            lines.append(root_name)
+        walk_children(list(node.get('children') or []), '')
         return lines
 
     @staticmethod

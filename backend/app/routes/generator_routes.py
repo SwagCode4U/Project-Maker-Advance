@@ -239,16 +239,30 @@ def generate_pdf(config: ProjectConfig):
     """Generate downloadable PDF with project summary"""
     try:
         from app.services.pdf_generator import PDFGenerator
+        from loguru import logger
+        
+        logger.info(f"Generating PDF for project: {config.project_name}")
+        
         generator = ProjectGenerator()
         tree = generator.generate_project_tree(config.dict())
+        
+        if tree is None:
+            tree = {"name": config.project_name, "type": "directory", "children": []}
+        
         requirements = ""
         if config.backend_framework:
-            if config.backend_framework.lower() == "fastapi":
+            be_fw = config.backend_framework.lower()
+            if be_fw == "fastapi":
                 requirements = BackendTemplates.fastapi_requirements()
-            elif config.backend_framework.lower() == "flask":
+            elif be_fw == "flask":
                 requirements = BackendTemplates.flask_requirements()
+            elif be_fw == "django":
+                requirements = BackendTemplates.django_requirements()
+            elif be_fw == "express":
+                requirements = BackendTemplates.express_package_json(config.dict())
         
         pdf_bytes = PDFGenerator.generate_summary_pdf(config.dict(), tree, requirements)
+        logger.info(f"PDF generated successfully: {len(pdf_bytes)} bytes")
         
         return StreamingResponse(
             io.BytesIO(pdf_bytes),
@@ -256,5 +270,8 @@ def generate_pdf(config: ProjectConfig):
             headers={"Content-Disposition": f"attachment; filename={config.project_name}_summary.pdf"}
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"PDF generation failed: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
 
