@@ -19,13 +19,8 @@ except Exception:  # pragma: no cover
     RateLimitExceeded = None  # type: ignore
     SLOWAPI_AVAILABLE = False
 
-from app.database import Base, init_engine
-from app.routes import project_routes, setup_routes, generator_routes
+from app.routes import generator_routes
 from app.routes import fs_routes
-
-# Initialize engine & create tables
-engine = init_engine()
-Base.metadata.create_all(bind=engine)  # creates tables automatically
 
 # FastAPI app
 app = FastAPI(title="ProjectMaker API", description="Interactive Project Scaffolding Wizard")
@@ -112,8 +107,6 @@ async def log_requests(request: Request, call_next):
     return response
 
 # Include routes
-app.include_router(project_routes.router)
-app.include_router(setup_routes.router)
 app.include_router(generator_routes.router)
 app.include_router(fs_routes.router)
 
